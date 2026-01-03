@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ultimate Space Invaders</title>
+
+<style>
+body { margin:0; background:black; touch-action:none; }
+canvas { display:block; margin:auto; }
+.controls{
+     position:fixed; bottom:10px; width:100%;
+ display:flex; justify-content:space-around;
+}
+button{
+ width:70px; height:70px;
+ border-radius:50%; border:none;
+ font-size:28px; background:#333; color:white;
+}
+</style>
+</head>
+
+<body>
+
+<canvas id="game"></canvas>
+
+<div class="controls">
+ <button ontouchstart="left=true" ontouchend="left=false">⬅</button>
+ <button ontouchstart="fire()">🔥</button>
+ <button ontouchstart="right=true" ontouchend="right=false">➡</button>
+</div>
+
+<script>
+/* ================== SETUP ================== */
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.width = innerWidth;
+canvas.height = innerHeight;
+
+/* ================== IMAGES ================== */
+const bg = new Image(); bg.src="background.png";
+const playerImg = new Image(); playerImg.src="spaceship.png";
+const enemyImg = new Image(); enemyImg.src="enemy1.png";
+const bulletImg = new Image(); bulletImg.src="bullet.png";
+const powerImg = new Image(); powerImg.src="powerup.png";
+const bossImg = new Image(); bossImg.src="boss.png";
+
+/* ================== SOUNDS ================== */
+const shootS = new Audio("shoot.wav");
+const boomS = new Audio("explosion.wav");
+const powerS = new Audio("power.wav");
+const overS = new Audio("gameover.wav");
+
+/* ================== PLAYER ================== */
+let px = canvas.width/2-32, py = canvas.height-150;
+let speed = 6, lives = 3;
+
+/* ================== BULLET ================== */
+let bx=0, by=0, bSpeed=10, bState="ready";
+
+/* ================== SCORE / LEVEL ================== */
+let score=0, level=1, paused=false;
+
+/* ================== CONTROLS ================== */
+let left=false, right=false;
+
+/* ================== ENEMIES ================== */
+let enemies=[];
+function createEnemies(n){
+ enemies=[];
+ for(let i=0;i<n;i++){
+  enemies.push({
+   x:Math.random()*(canvas.width-64),
+   y:Math.random()*200,
+   s:1+level*0.4
+  });
+ }
+}
+createEnemies(4);
+
+/* ================== BOSS ================== */
+let boss={x:canvas.width/2-100,y:60,hp:10,active:false};
+
+/* ================== POWER-UP ================== */
+let power={x:0,y:0,active:false};
+
+/* ================== INPUT ================== */
+addEventListener("keydown",e=>{
+ if(e.key==="ArrowLeft") left=true;
+ if(e.key==="ArrowRight") right=true;
+ if(e.key===" ") fire();
+ if(e.key==="p"||e.key==="P") paused=!paused;
+});
+addEventListener("keyup",e=>{
+ if(e.key==="ArrowLeft") left=false;
+ if(e.key==="ArrowRight") right=false;
+});
+
+/* ================== FUNCTIONS ================== */
+function fire(){
+ if(bState==="ready"){
+  bx=px+16; by=py;
+  bState="fire"; shootS.play();
+ }
+}
+
+const hit=(a,b,c,d)=>Math.hypot(a-c,b-d)<30;
+
+/* ================== LEADERBOARD ================== */
+function saveScore(){
+ let scores=JSON.parse(localStorage.getItem("scores"))||[];
+ scores.push(score);
+ scores.sort((a,b)=>b-a);
+ scores=scores.slice(0,5);
+ localStorage.setItem("scores",JSON.stringify(scores));
+}
+function showLeaderboard(){
+ let s=JSON.parse(localStorage.getItem("scores"))||[];
+ let t="LEADERBOARD\n";
+ s.forEach((v,i)=>t+=(i+1)+". "+v+"\n");
+ alert(t);
+}
+
+/* ================== GAME LOOP ================== */
+function loop(){
+ ctx.clearRect(0,0,canvas.width,canvas.height);
+ ctx.drawImage(bg,0,0,canvas.width,canvas.height);
+
+ if(paused){
+  ctx.fillStyle="white";
+  ctx.font="40px Arial";
+  ctx.fillText("PAUSED",canvas.width/2-80,canvas.height/2);
+  requestAnimationFrame(loop); return;
+ }
+
+ /* Player */
+ if(left&&px>0) px-=speed;
+ if(right&&px<canvas.width-64) px+=speed;
+ ctx.drawImage(playerImg,px,py,64,128);
+
+ /* Bullet */
+ if(bState==="fire"){
+  ctx.drawImage(bulletImg,bx,by,32,32);
+  by-=bSpeed;
+  if(by<0) bState="ready";
+ }
+
+ /* Enemies */
+ enemies.forEach(e=>{
+  e.x+=e.s;
+  if(e.x<0||e.x>canvas.width-64){e.s*=-1;e.y+=40;}
+
+  if(hit(e.x,e.y,bx,by)){
+   boomS.play(); score++;
+   bState="ready";
+   e.x=Math.random()*(canvas.width-64);
+   e.y=Math.random()*200;
+  }
+
+  if(e.y>py){
+   lives--; e.y=0;
+   if(lives<=0){
+    overS.play();
+    saveScore(); showLeaderboard();
+    location.reload();
+   }
+  }
+  ctx.drawImage(enemyImg,e.x,e.y,64,64);
+ });
+
+ /* Level up */
+ if(score>=level*10){
+  level++; createEnemies(3+level);
+ }
+
+ /* Boss */
+ if(level>=5 && !boss.active){
+  boss.active=true; boss.hp=10;
+ }
+ if(boss.active){
+  ctx.drawImage(bossImg,boss.x,boss.y,200,120);
+  if(hit(boss.x,boss.y,bx,by)){
+   boss.hp--; bState="ready";
+   if(boss.hp<=0){
+    boss.active=false;
+    score+=20; level++;
+   }
+  }
+ }
+
+ /* Power-up */
+ if(!power.active && Math.random()<0.002){
+  power.active=true;
+  power.x=Math.random()*canvas.width;
+  power.y=0;
+ }
+ if(power.active){
+  power.y+=3;
+  ctx.drawImage(powerImg,power.x,power.y,40,40);
+  if(hit(power.x,power.y,px,py)){
+   powerS.play();
+   bSpeed=18;
+   setTimeout(()=>bSpeed=10,5000);
+   power.active=false;
+  }
+ }
+
+ /* HUD */
+ ctx.fillStyle="white";
+ ctx.font="20px Arial";
+ ctx.fillText("Score: "+score,10,30);
+ ctx.fillText("Lives: "+lives,10,60);
+ ctx.fillText("Level: "+level,10,90);
+
+ requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
